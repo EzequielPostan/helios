@@ -268,15 +268,21 @@ impl<R: ConsensusRpc> Inner<R> {
 
         self.bootstrap(checkpoint).await?;
 
-        let current_period = calc_sync_period(self.store.finalized_header.beacon.slot);
-        let updates = self
-            .rpc
-            .get_updates(current_period, MAX_REQUEST_LIGHT_CLIENT_UPDATES)
-            .await?;
+        let mut current_period = calc_sync_period(self.store.finalized_header.slot);
+        let expected_update_period = calc_sync_period(self.expected_current_slot());
 
-        for update in updates {
-            self.verify_update(&update)?;
-            self.apply_update(&update);
+        while current_period < expected_update_period {
+            let updates = self
+                .rpc
+                .get_updates(current_period, MAX_REQUEST_LIGHT_CLIENT_UPDATES)
+                .await?;
+
+            for update in updates {
+                self.verify_update(&update)?;
+                self.apply_update(&update);
+            }
+
+            current_period += MAX_REQUEST_LIGHT_CLIENT_UPDATES as u64;
         }
 
         let finality_update = self.rpc.get_finality_update().await?;
